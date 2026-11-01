@@ -1,9 +1,11 @@
 from fastapi import FastAPI
+from app.api.webhooks import router as webhook_router
 app=FastAPI(
     title="PR Review Agent",
     description="An AI-powered GitHub Pull Request Reviewer",
     version="1.0.0"
 )
+app.include_router(webhook_router)
 @app.get("/")
 def home():
     return {
