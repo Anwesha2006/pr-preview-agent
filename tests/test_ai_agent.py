@@ -4,7 +4,7 @@ from app.ai_agent import review_pull_request
 
 OWNER = "Anwesha2006"
 REPO = "pr-review-agent-demo"
-PR_NUMBER = 1
+PR_NUMBER = 2
 
 
 print("Starting PR Review Agent...")

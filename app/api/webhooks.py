@@ -1,8 +1,7 @@
-
 import hashlib
 import hmac
 import json
-
+from app.tasks import review_pr_task
 from fastapi import APIRouter, Request, HTTPException
 
 from app.config import WEBHOOK_SECRET
@@ -13,17 +12,14 @@ router = APIRouter()
 @router.post("/webhooks/github")
 async def github_webhook(request: Request):
 
-    # 1. Check whether our secret is configured
     if not WEBHOOK_SECRET:
         raise HTTPException(
             status_code=500,
             detail="Webhook secret is not configured"
         )
 
-    # 2. Read the original request body
     body = await request.body()
 
-    # 3. Get GitHub's signature
     signature = request.headers.get(
         "X-Hub-Signature-256"
     )
@@ -34,14 +30,12 @@ async def github_webhook(request: Request):
             detail="Missing signature"
         )
 
-    # 4. Generate our own signature
     expected_signature = "sha256=" + hmac.new(
         WEBHOOK_SECRET.encode("utf-8"),
         body,
         hashlib.sha256
     ).hexdigest()
 
-    # 5. Compare both signatures
     if not hmac.compare_digest(
         expected_signature,
         signature
@@ -51,33 +45,50 @@ async def github_webhook(request: Request):
             detail="Invalid signature"
         )
 
-    # 6. Identify the GitHub event
     event = request.headers.get("X-GitHub-Event")
 
     payload = json.loads(body)
 
-    # 7. Handle Pull Request events
     if event == "pull_request":
 
         action = payload.get("action")
 
         if action == "opened":
+
             repository = payload.get(
                 "repository", {}
             ).get("full_name")
 
-            pr_number = payload.get(
-                "number"
-            )
+            pr_number = payload.get("number")
+
+            if not repository or not pr_number:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Missing repository or PR number"
+                )
+
+            # Extract repository owner and name
+            owner, repo = repository.split("/", 1)
 
             print("New Pull Request detected!")
             print("Repository:", repository)
             print("PR Number:", pr_number)
 
+            # Submit background task to Redis
+            task = review_pr_task.delay(
+                owner,
+                repo,
+                pr_number
+            )
+
+            print("Review task queued!")
+            print("Task ID:", task.id)
+
             return {
-                "message": "Pull Request received!",
+                "message": "PR review task queued successfully",
                 "repository": repository,
-                "pr_number": pr_number
+                "pr_number": pr_number,
+                "task_id": task.id
             }
 
     return {

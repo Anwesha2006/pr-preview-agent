@@ -201,3 +201,31 @@ def post_pull_request_review(
         )
 
     return response.json()
+def get_pull_request_reviews(owner, repo, pr_number):
+    token = get_installation_token()
+
+    url = (
+        f"{GITHUB_API}/repos/{owner}/{repo}"
+        f"/pulls/{pr_number}/reviews"
+    )
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+
+    response = httpx.get(
+        url,
+        headers=headers,
+        params={"per_page": 100},
+        timeout=20.0
+    )
+
+    if response.is_error:
+        raise RuntimeError(
+            f"Could not fetch reviews: "
+            f"{response.status_code} - {response.text}"
+        )
+
+    return response.json()
