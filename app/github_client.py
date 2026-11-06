@@ -7,7 +7,6 @@ from pathlib import Path
 from app.config import GITHUB_APP_ID, GITHUB_INSTALLATION_ID, GITHUB_PRIVATE_KEY_PATH
 
 GITHUB_API = "https://api.github.com"
-
 def generate_app_jwt():
     if not all([GITHUB_APP_ID,GITHUB_INSTALLATION_ID]):
         raise ValueError("GitHub App credentials are missing")
@@ -114,27 +113,91 @@ def get_pull_request_files(owner, repo, pr_number):
         page += 1
     return all_files
 
-def read_repository_files(owner, repo, ref, file_path):
+
+
+
+def read_repository_files(owner, repo, file_path, ref):
     token = get_installation_token()
-    encoded_path=quote(file_path,safe="/")
-    url=(
+
+    encoded_path = quote(file_path, safe="/")
+
+    url = (
         f"{GITHUB_API}/repos/{owner}/{repo}"
         f"/contents/{encoded_path}"
     )
+
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28"
     }
-    response=httpx.get(
+
+    print(f"[GITHUB] Reading file: {file_path}")
+    print(f"[GITHUB] Commit: {ref}")
+
+    response = httpx.get(
         url,
         headers=headers,
         params={"ref": ref},
         timeout=20.0
     )
-    response.raise_for_status()
-    data=response.json()
+
+    if response.is_error:
+        raise RuntimeError(
+            f"GitHub API returned HTTP {response.status_code}: "
+            f"{response.text[:500]}"
+        )
+
+    data = response.json()
+
     if data.get("encoding") != "base64":
-        raise ValueError("Unexpected encoding for file content")
-    content=base64.b64decode(data["content"])
+        raise ValueError(
+            f"Unexpected file encoding: {data.get('encoding')}"
+        )
+
+    content = base64.b64decode(data["content"])
+
     return content.decode("utf-8", errors="replace")
+
+def post_pull_request_review(
+    owner,
+    repo,
+    pr_number,
+    body,
+    comments=None
+):
+    token = get_installation_token()
+
+    url = (
+        f"{GITHUB_API}/repos/{owner}/{repo}"
+        f"/pulls/{pr_number}/reviews"
+    )
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+
+    payload = {
+        "body": body,
+        "event": "COMMENT"
+    }
+
+    if comments:
+        payload["comments"] = comments
+
+    response = httpx.post(
+        url,
+        headers=headers,
+        json=payload,
+        timeout=30.0
+    )
+
+    if response.is_error:
+        raise RuntimeError(
+            f"GitHub review failed: "
+            f"{response.status_code} - {response.text}"
+        )
+
+    return response.json()
