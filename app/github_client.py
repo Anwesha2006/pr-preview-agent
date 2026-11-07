@@ -1,31 +1,62 @@
+
 import time
 import httpx
 import jwt
 import base64
+
 from urllib.parse import quote
 from pathlib import Path
-from app.config import GITHUB_APP_ID, GITHUB_INSTALLATION_ID, GITHUB_PRIVATE_KEY_PATH
+
+from app.config import (
+    GITHUB_APP_ID,
+    GITHUB_INSTALLATION_ID,
+    GITHUB_PRIVATE_KEY_PATH,
+    GITHUB_PRIVATE_KEY
+)
 
 GITHUB_API = "https://api.github.com"
+
+
+def load_private_key():
+    # Production: read private key from environment variable.
+    if GITHUB_PRIVATE_KEY:
+        return GITHUB_PRIVATE_KEY.replace("\\n", "\n")
+
+    # Local development: read private key from .pem file.
+    if GITHUB_PRIVATE_KEY_PATH:
+        private_key_path = Path(GITHUB_PRIVATE_KEY_PATH)
+
+        if not private_key_path.is_absolute():
+            private_key_path = Path.cwd() / private_key_path
+
+        if private_key_path.is_file():
+            return private_key_path.read_text(encoding="utf-8")
+
+    raise ValueError("GitHub App private key is not configured")
+
+
 def generate_app_jwt():
-    if not all([GITHUB_APP_ID,GITHUB_INSTALLATION_ID]):
-        raise ValueError("GitHub App credentials are missing")
-    private_key_path=Path(GITHUB_PRIVATE_KEY_PATH)
-    if not private_key_path.is_absolute():
-        private_key_path=Path.cwd() / private_key_path
-    private_key=private_key_path.read_text()
-    now=int(time.time())
-    payload={
+    if not GITHUB_APP_ID:
+        raise ValueError("GitHub App ID is missing")
+
+    private_key = load_private_key()
+
+    now = int(time.time())
+
+    payload = {
         "iat": now - 60,
         "exp": now + 60 * 10,
         "iss": GITHUB_APP_ID
     }
-    token=jwt.encode(
+
+    token = jwt.encode(
         payload,
         private_key,
         algorithm="RS256"
     )
+
     return token
+
 def get_installation_token():
     if not GITHUB_INSTALLATION_ID:
         raise ValueError("GitHub Installation ID is missing")
