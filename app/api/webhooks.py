@@ -1,12 +1,14 @@
 import hashlib
 import hmac
 import json
+import logging
 from app.tasks import review_pr_task
 from fastapi import APIRouter, Request, HTTPException
 
 from app.config import WEBHOOK_SECRET
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/webhooks/github")
@@ -19,6 +21,7 @@ async def github_webhook(request: Request):
         )
 
     body = await request.body()
+    logger.info("GitHub webhook received")
 
     signature = request.headers.get(
         "X-Hub-Signature-256"
@@ -45,51 +48,41 @@ async def github_webhook(request: Request):
             detail="Invalid signature"
         )
 
-    event = request.headers.get("X-GitHub-Event")
+    logger.info("GitHub webhook signature verified")
 
-    payload = json.loads(body)
+    event = request.headers.get("X-GitHub-Event")
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from error
+
+    action = payload.get("action")
+    logger.info("GitHub event identified: event=%s action=%s", event, action)
 
     if event == "pull_request":
+        if action not in {"opened", "synchronize"}:
+            logger.info("Ignoring pull_request action: %s", action)
+            return {"message": "Webhook ignored", "event": event, "action": action}
 
-        action = payload.get("action")
-
-        if action == "opened":
-
-            repository = payload.get(
-                "repository", {}
-            ).get("full_name")
-
-            pr_number = payload.get("number")
-
-            if not repository or not pr_number:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Missing repository or PR number"
-                )
-
-            # Extract repository owner and name
+        repository_data = payload.get("repository") or {}
+        repository = repository_data.get("full_name")
+        owner = (repository_data.get("owner") or {}).get("login")
+        repo = repository_data.get("name")
+        if (not owner or not repo) and isinstance(repository, str) and "/" in repository:
             owner, repo = repository.split("/", 1)
+        pr_number = payload.get("number")
 
-            print("New Pull Request detected!")
-            print("Repository:", repository)
-            print("PR Number:", pr_number)
+        if not owner or not repo or not isinstance(pr_number, int) or isinstance(pr_number, bool):
+            raise HTTPException(status_code=400, detail="Missing repository owner, name, or PR number")
 
-            # Submit background task to Redis
-            task = review_pr_task.delay(
-                owner,
-                repo,
-                pr_number
-            )
-
-            print("Review task queued!")
-            print("Task ID:", task.id)
-
-            return {
-                "message": "PR review task queued successfully",
-                "repository": repository,
-                "pr_number": pr_number,
-                "task_id": task.id
-            }
+        task = review_pr_task.delay(owner, repo, pr_number)
+        logger.info("Celery review task queued: task_id=%s repository=%s/%s pr=%s", task.id, owner, repo, pr_number)
+        return {
+            "message": "PR review task queued successfully",
+            "repository": f"{owner}/{repo}",
+            "pr_number": pr_number,
+            "task_id": task.id
+        }
 
     return {
         "message": "Webhook received",
