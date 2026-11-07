@@ -97,3 +97,60 @@ def test_new_commit_is_not_skipped(monkeypatch):
     result = ai_agent.review_pull_request("owner", "repo", 7)
     assert calls == [("owner", "repo", 7)]
     assert result == {"message": "No files changed in this Pull Request."}
+
+def test_webhook_rejects_json_array(monkeypatch):
+    monkeypatch.setattr(webhooks, "WEBHOOK_SECRET", SECRET)
+
+    body = json.dumps(["hello", "world"]).encode("utf-8")
+
+    signature = "sha256=" + hmac.new(
+        SECRET.encode(),
+        body,
+        hashlib.sha256
+    ).hexdigest()
+
+    response = client.post(
+        "/webhooks/github",
+        content=body,
+        headers={
+            "X-GitHub-Event": "pull_request",
+            "X-Hub-Signature-256": signature
+        }
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Webhook payload must be a JSON object"
+def test_webhook_rejects_oversized_payload(monkeypatch):
+    monkeypatch.setattr(webhooks, "WEBHOOK_SECRET", SECRET)
+
+    body = b"x" * (1024 * 1024 + 1)
+
+    response = client.post(
+        "/webhooks/github",
+        content=body,
+        headers={
+            "X-Hub-Signature-256": "sha256=invalid"
+        }
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Webhook payload too large"
+
+def test_first_delivery_is_not_duplicate(monkeypatch):
+    monkeypatch.setattr(
+        webhooks.redis_client,
+        "set",
+        lambda *args, **kwargs: True
+    )
+
+    assert webhooks.is_duplicate_delivery("new-delivery") is False
+
+
+def test_repeated_delivery_is_duplicate(monkeypatch):
+    monkeypatch.setattr(
+        webhooks.redis_client,
+        "set",
+        lambda *args, **kwargs: False
+    )
+
+    assert webhooks.is_duplicate_delivery("duplicate-delivery") is True
