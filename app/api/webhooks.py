@@ -7,7 +7,7 @@ import redis
 
 from fastapi import APIRouter, Request, HTTPException
 
-from app.config import WEBHOOK_SECRET
+from app.config import WEBHOOK_SECRET,REDIS_URL
 from app.tasks import review_pr_task
 
 router = APIRouter()
@@ -16,10 +16,9 @@ logger = logging.getLogger(__name__)
 MAX_WEBHOOK_SIZE = 1 * 1024 * 1024  # 1 MB
 
 redis_client = redis.Redis.from_url(
-    "redis://localhost:6379/0",
+    REDIS_URL,
     decode_responses=True
 )
-
 
 def is_duplicate_delivery(delivery_id: str) -> bool:
     key = f"github_delivery:{delivery_id}"
