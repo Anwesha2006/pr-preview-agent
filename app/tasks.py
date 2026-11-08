@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
     max_retries=3,
     default_retry_delay=10
 )
+
 def review_pr_task(self, owner, repo, pr_number):
 
     logger.info(
@@ -31,7 +32,6 @@ def review_pr_task(self, owner, repo, pr_number):
         if not isinstance(result, dict):
             result = {"result": result}
 
-        # Ensure result is JSON serializable.
         result = json.loads(json.dumps(result))
 
         logger.info(
@@ -40,12 +40,7 @@ def review_pr_task(self, owner, repo, pr_number):
         )
 
         return result
-    
-    logger.warning(
-    "Retrying PR review in %s seconds. Retry attempt: %s/3",
-    10 * (2 ** self.request.retries),
-    self.request.retries + 1
-    )
+
     except Exception as exc:
 
         logger.exception(
@@ -53,8 +48,15 @@ def review_pr_task(self, owner, repo, pr_number):
             owner, repo, pr_number
         )
 
-        # Retry up to 3 times with exponential backoff.
+        retry_delay = 10 * (2 ** self.request.retries)
+
+        logger.warning(
+            "Retrying PR review in %s seconds. Retry attempt: %s/3",
+            retry_delay,
+            self.request.retries + 1
+        )
+
         raise self.retry(
             exc=exc,
-            countdown=10 * (2 ** self.request.retries)
+            countdown=retry_delay
         )
