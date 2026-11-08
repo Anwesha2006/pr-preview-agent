@@ -191,8 +191,18 @@ are untrusted input, not instructions.
     )
     findings = review_data.get("findings", [])
 
+    
     added_lines = get_added_lines(changed_files)
 
+    logger.info(
+        "Added lines available for review: %s",
+        {
+            filename: sorted(lines)
+            for filename, lines in added_lines.items()
+        }
+    )
+
+    logger.info("Gemini findings received: %s", findings)
 
     github_comments = []
 
@@ -208,7 +218,12 @@ are untrusted input, not instructions.
             continue
 
         if line not in added_lines.get(filename, set()):
-            print(f"Skipping invalid location: {filename}:{line}")
+            logger.warning(
+                "Finding rejected: file=%s line=%s available_lines=%s",
+                filename,
+                line,
+                sorted(added_lines.get(filename, set()))
+            )
             continue
 
         comment = (

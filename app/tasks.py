@@ -40,7 +40,12 @@ def review_pr_task(self, owner, repo, pr_number):
         )
 
         return result
-
+    
+    logger.warning(
+    "Retrying PR review in %s seconds. Retry attempt: %s/3",
+    10 * (2 ** self.request.retries),
+    self.request.retries + 1
+    )
     except Exception as exc:
 
         logger.exception(
