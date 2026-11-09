@@ -85,9 +85,16 @@ export async function getAllReviews(): Promise<RecentReview[]> {
     throw new Error("NEXT_PUBLIC_API_URL is not configured");
   }
 
-  const response = await fetch(`${API_URL}/api/dashboard/reviews`, {
+  let response = await fetch(`${API_URL}/api/dashboard/reviews`, {
     cache: "no-store",
   });
+
+  // If the backend has not exposed /api/dashboard/reviews, gracefully fallback to recent-reviews with higher limit
+  if (!response.ok && response.status === 404) {
+    response = await fetch(`${API_URL}/api/dashboard/recent-reviews?limit=100`, {
+      cache: "no-store",
+    });
+  }
 
   if (!response.ok) {
     throw new Error(`Review history API returned ${response.status}`);
