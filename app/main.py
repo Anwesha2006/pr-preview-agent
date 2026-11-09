@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from app.routes.dashboard import router as dashboard_router
 from app.api.webhooks import router as webhook_router
 from app.logging_config import setup_logging
 
@@ -14,7 +14,7 @@ app = FastAPI(
     description="An AI-powered GitHub Pull Request Reviewer",
     version="1.0.0"
 )
-
+app.include_router(dashboard_router)
 # Allow the local Next.js frontend to communicate with FastAPI.
 app.add_middleware(
     CORSMiddleware,
