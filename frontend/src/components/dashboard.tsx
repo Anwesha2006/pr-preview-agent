@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {getDashboardStats,getRecentReviews,type DashboardStats,type RecentReview,} from "@/lib/api";
-import Link from "next/link";
+import { useEffect, useState, useMemo } from "react";
+import {getDashboardStats,getRecentReviews,getReviewDetails,getAllReviews,getDashboardAnalytics,type DashboardStats,type RecentReview,type ReviewDetails,type DashboardAnalytics,} from "@/lib/api";import Link from "next/link";
 import { Activity, ArrowDownRight, ArrowRight, ArrowUpRight, Bug, Clock3, Code2, GitBranch, GitPullRequest, ShieldCheck, Sparkles, Workflow } from "lucide-react";
 
 function PageHeading({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) {
@@ -264,17 +263,518 @@ export function RepositoriesPage() {
   return <><PageHeading eyebrow="WORKSPACE" title="Repositories" description="Manage the GitHub repositories connected to your AI reviewer." action={<span className="count-chip"><GitBranch size={14} /> 0 repositories</span>} /><div className="toolbar"><div className="toolbar-label"><GitBranch size={15} /> Connected repositories</div><span className="toolbar-muted">Repository sync API not configured</span></div><section className="card large-empty"><EmptyState icon={Code2} title="No repository data available yet" description="The GitHub App webhook can receive pull requests, but the backend does not currently expose a repository list endpoint. Add repository API support to see your connected projects here." action={<Link className="button button-secondary" href="/settings">View connection status <ArrowRight size={14} /></Link>} /></section><div className="info-strip"><span className="info-mark">i</span><p>Once repository sync is available, you’ll be able to see default branches, review counts, and the last review date for each project.</p></div></>;
 }
 
+
 export function ReviewsPage() {
-  return <><PageHeading eyebrow="CODE QUALITY" title="Review history" description="Search and inspect every pull request reviewed by your AI agent." action={<span className="count-chip"><GitPullRequest size={14} /> 0 reviews</span>} /><section className="card filter-card"><div className="search-field"><span className="search-glyph">⌕</span><span>Search pull requests, repositories…</span><kbd>⌘ K</kbd></div><div className="filter-chip">All repositories <ArrowDownRight size={13} /></div><div className="filter-chip">Any severity <ArrowDownRight size={13} /></div><div className="filter-chip">Any status <ArrowDownRight size={13} /></div><div className="filter-chip date-filter"><Clock3 size={13} /> Date range <ArrowDownRight size={13} /></div></section><section className="card large-empty reviews-empty"><EmptyState icon={GitPullRequest} title="Your review history is empty" description="Reviews are posted to GitHub, but they aren’t saved in a database yet. Add backend persistence to search, filter, and revisit past reviews here." action={<Link className="button button-secondary" href="/repositories">Browse repositories <ArrowRight size={14} /></Link>} /></section><div className="results-foot"><span>Showing <strong>0 reviews</strong></span><span>History is unavailable until backend persistence is implemented.</span></div></>;
+  const [reviews, setReviews] = useState<RecentReview[]>([]);
+  const [search, setSearch] = useState("");
+  const [repository, setRepository] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadReviews() {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const data = await getAllReviews();
+        setReviews(data);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load review history"
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadReviews();
+  }, []);
+
+  const repositories = useMemo(
+    () => [...new Set(reviews.map((review) => review.repository))],
+    [reviews]
+  );
+
+  const filteredReviews = useMemo(() => {
+    return reviews.filter((review) => {
+      const searchText = search.toLowerCase();
+
+      const matchesSearch =
+        review.repository.toLowerCase().includes(searchText) ||
+        (review.pr_title ?? "").toLowerCase().includes(searchText) ||
+        String(review.pr_number).includes(searchText);
+
+      const matchesRepository =
+        repository === "all" || review.repository === repository;
+
+      const matchesStatus =
+        status === "all" || review.status === status;
+
+      return matchesSearch && matchesRepository && matchesStatus;
+    });
+  }, [reviews, search, repository, status]);
+
+  return (
+    <>
+      <PageHeading
+        eyebrow="CODE QUALITY"
+        title="Review history"
+        description="Search and inspect every pull request reviewed by your AI agent."
+        action={
+          <span className="count-chip">
+            <GitPullRequest size={14} />
+            {reviews.length} reviews
+          </span>
+        }
+      />
+
+      <section className="card filter-card">
+        <div className="search-field">
+          <span className="search-glyph">⌕</span>
+          <input
+            type="text"
+            placeholder="Search pull requests, repositories..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              background: "transparent",
+              border: "none",
+              outline: "none",
+              color: "inherit",
+            }}
+          />
+        </div>
+
+        <select
+          className="filter-chip"
+          value={repository}
+          onChange={(e) => setRepository(e.target.value)}
+        >
+          <option value="all">All repositories</option>
+          {repositories.map((repo) => (
+            <option key={repo} value={repo}>
+              {repo}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="filter-chip"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+        >
+          <option value="all">Any status</option>
+          <option value="completed">Completed</option>
+          <option value="pending">Pending</option>
+          <option value="failed">Failed</option>
+        </select>
+      </section>
+
+      {error && (
+        <div className="data-note">
+          <span>DATA ERROR</span>
+          <p>{error}</p>
+        </div>
+      )}
+
+      <section className="card large-empty reviews-empty">
+        {loading ? (
+          <EmptyState
+            icon={Activity}
+            title="Loading review history..."
+            description="Fetching saved reviews from PostgreSQL."
+          />
+        ) : filteredReviews.length === 0 ? (
+          <EmptyState
+            icon={GitPullRequest}
+            title="No matching reviews"
+            description="Try changing your search or filters."
+          />
+        ) : (
+          <div className="review-history-list">
+            {filteredReviews.map((review) => (
+              <Link
+                key={review.id}
+                href={`/reviews/${review.id}`}
+                className="recent-review-row"
+              >
+                <div className="quick-icon">
+                  <GitPullRequest size={16} />
+                </div>
+
+                <div className="recent-review-info">
+                  <strong>
+                    {review.repository} #{review.pr_number}
+                  </strong>
+                  <small>
+                    {review.pr_title || "Pull request review"}
+                  </small>
+                  <small>
+                    {new Date(review.created_at).toLocaleString()}
+                  </small>
+                </div>
+
+                <div className="recent-review-meta">
+                  <span>{review.findings_count} findings</span>
+                  <span className="status-pill status-ready">
+                    {review.status}
+                  </span>
+                </div>
+
+                <ArrowRight size={15} />
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <div className="results-foot">
+        <span>
+          Showing <strong>{filteredReviews.length} of {reviews.length} reviews</strong>
+        </span>
+        <span>Review history synced from PostgreSQL.</span>
+      </div>
+    </>
+  );
 }
+
+
 
 export function ReviewDetailsPage({ id }: { id: string }) {
-  return <><PageHeading eyebrow="REVIEW DETAILS" title="Pull request review" description="Inspect the AI summary and line-by-line findings for this review." action={<Link className="button button-secondary" href="/reviews"><ArrowRight className="back-arrow" size={14} /> All reviews</Link>} /><section className="card large-empty detail-empty"><div className="detail-skeleton"><span className="skeleton-label">REVIEW ID</span><code>{id}</code></div><EmptyState icon={GitPullRequest} title="This review isn’t available" description="Review details are not persisted by the backend yet. When review records and findings are stored, this page will show the summary and findings grouped by severity." action={<Link className="button button-secondary" href="/reviews">Return to review history <ArrowRight size={14} /></Link>} /></section><div className="severity-placeholder">{["Critical", "High", "Medium", "Low"].map((severity, i) => <div className="severity-row" key={severity}><span className={`severity-dot severity-${i}`} /><strong>{severity}</strong><span>Findings will appear when review history is available</span><span className="severity-count">—</span></div>)}</div></>;
+  const [review, setReview] = useState<ReviewDetails | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadReview() {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const data = await getReviewDetails(id);
+        setReview(data);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load review details"
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadReview();
+  }, [id]);
+
+  return (
+    <>
+      <PageHeading
+        eyebrow="REVIEW DETAILS"
+        title={review?.pr_title || "Pull request review"}
+        description={
+          review
+            ? `${review.repository} · PR #${review.pr_number}`
+            : "Inspect the AI summary and line-by-line findings."
+        }
+        action={
+          <Link className="button button-secondary" href="/reviews">
+            <ArrowRight className="back-arrow" size={14} />
+            All reviews
+          </Link>
+        }
+      />
+
+      {loading ? (
+        <section className="card large-empty">
+          <EmptyState
+            icon={Activity}
+            title="Loading review details..."
+            description="Fetching review information from PostgreSQL."
+          />
+        </section>
+      ) : error ? (
+        <section className="card large-empty">
+          <EmptyState
+            icon={GitPullRequest}
+            title="Unable to load review"
+            description={error}
+            action={
+              <Link className="button button-secondary" href="/reviews">
+                Return to review history
+              </Link>
+            }
+          />
+        </section>
+      ) : review ? (
+        <>
+          <section className="card settings-card">
+            <div className="settings-card-head">
+              <div>
+                <h2>Review summary</h2>
+                <p>{review.repository} · PR #{review.pr_number}</p>
+              </div>
+              <span className="status-pill status-ready">
+                {review.status}
+              </span>
+            </div>
+
+            <p>
+              {review.summary || "No AI summary was saved for this review."}
+            </p>
+
+            {review.pr_url && (
+              <a
+                className="subtle-link"
+                href={review.pr_url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View pull request on GitHub <ArrowUpRight size={14} />
+              </a>
+            )}
+
+            <div className="setting-divider" />
+
+            <div className="stat-grid">
+              <div>
+                <span className="setting-label">Findings</span>
+                <strong>{review.findings_count}</strong>
+              </div>
+              <div>
+                <span className="setting-label">Comments posted</span>
+                <strong>{review.comments_posted}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="card settings-card">
+            <SectionHeader
+              title="Code findings"
+              caption="Issues identified by your AI reviewer"
+            />
+
+            {review.findings.length === 0 ? (
+              <EmptyState
+                icon={ShieldCheck}
+                title="No findings"
+                description="No code issues were identified in this review."
+              />
+            ) : (
+              <div className="finding-list">
+                {review.findings.map((finding) => (
+                  <article className="finding-item" key={finding.id}>
+                    <div className="finding-heading">
+                      <strong>{finding.file_path}</strong>
+                      <span
+                        className={`status-pill severity-${finding.severity.toLowerCase()}`}
+                      >
+                        {finding.severity}
+                      </span>
+                    </div>
+
+                    <p className="finding-line">
+                      Line {finding.line_number ?? "Not specified"}
+                    </p>
+
+                    <p>{finding.issue}</p>
+
+                    {finding.suggestion && (
+                      <div className="finding-suggestion">
+                        <strong>Suggested fix</strong>
+                        <p>{finding.suggestion}</p>
+                      </div>
+                    )}
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <div className="results-foot">
+            <span>
+              Review ID: <strong>{review.id}</strong>
+            </span>
+            <span>
+              {new Date(review.created_at).toLocaleString()}
+            </span>
+          </div>
+        </>
+      ) : null}
+    </>
+  );
 }
 
+
+
 export function AnalyticsPage() {
-  return <><PageHeading eyebrow="INSIGHTS" title="Analytics" description="Understand review quality, issue patterns, and how your projects evolve." action={<span className="count-chip"><Clock3 size={14} /> Last 30 days</span>} /><div className="analytics-empty-grid"><section className="card analytics-empty"><SectionHeader title="Review activity" caption="Pull requests reviewed over time" /><EmptyState icon={Activity} title="No activity to chart" description="Persisted review records are needed to calculate this trend." /></section><section className="card analytics-empty"><SectionHeader title="Issues by severity" caption="Findings across all reviews" /><EmptyState icon={Bug} title="No finding data yet" description="Severity breakdowns appear once findings are stored." /></section><section className="card analytics-empty repo-analytics"><SectionHeader title="Most reviewed repositories" caption="Where your agent spends its time" /><EmptyState icon={GitBranch} title="No repository activity" description="Repository and review history endpoints will power this list." /></section></div><div className="data-note"><span><i /> LIVE DATA ONLY</span><p>Analytics are intentionally blank until the backend can provide persisted reviews and findings.</p></div></>;
+  const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadAnalytics() {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await getDashboardAnalytics();
+        setAnalytics(data);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Unable to load analytics"
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadAnalytics();
+  }, []);
+
+  const severity = analytics?.severity_breakdown ?? {};
+  const totalFindings =
+    (severity.high ?? 0) +
+    (severity.medium ?? 0) +
+    (severity.low ?? 0);
+
+  const maxDailyReviews = Math.max(
+    1,
+    ...(analytics?.daily_reviews.map((item) => item.count) ?? [])
+  );
+
+  return (
+    <>
+      <PageHeading
+        eyebrow="INSIGHTS"
+        title="Analytics"
+        description="Understand review quality, issue patterns, and how your projects evolve."
+        action={
+          <span className="count-chip">
+            <Clock3 size={14} /> Last 30 days
+          </span>
+        }
+      />
+
+      {error && (
+        <div className="data-note">
+          <span>DATA ERROR</span>
+          <p>{error}</p>
+        </div>
+      )}
+
+      <div className="analytics-empty-grid">
+        <section className="card analytics-empty">
+          <SectionHeader
+            title="Review activity"
+            caption="Pull requests reviewed over the last 30 days"
+          />
+
+          {loading ? (
+            <p>Loading review activity...</p>
+          ) : analytics?.daily_reviews.length ? (
+            <div className="analytics-list">
+              {analytics.daily_reviews.map((item) => (
+                <div className="analytics-row" key={item.date}>
+                  <span>{item.date}</span>
+                  <div className="analytics-bar-track">
+                    <div
+                      className="analytics-bar"
+                      style={{
+                        width: `${(item.count / maxDailyReviews) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  <strong>{item.count}</strong>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={Activity}
+              title="No recent activity"
+              description="No reviews were recorded in the last 30 days."
+            />
+          )}
+        </section>
+
+        <section className="card analytics-empty">
+          <SectionHeader
+            title="Issues by severity"
+            caption="Findings across all reviews"
+          />
+
+          {loading ? (
+            <p>Loading severity data...</p>
+          ) : (
+            <div className="severity-list">
+              {[
+                { name: "High", count: severity.high ?? 0 },
+                { name: "Medium", count: severity.medium ?? 0 },
+                { name: "Low", count: severity.low ?? 0 },
+              ].map((item) => (
+                <div className="severity-row" key={item.name}>
+                  <strong>{item.name}</strong>
+                  <div className="analytics-bar-track">
+                    <div
+                      className="analytics-bar"
+                      style={{
+                        width: `${
+                          totalFindings
+                            ? (item.count / totalFindings) * 100
+                            : 0
+                        }%`,
+                      }}
+                    />
+                  </div>
+                  <span className="severity-count">{item.count}</span>
+                </div>
+              ))}
+              <p>Total findings: {totalFindings}</p>
+            </div>
+          )}
+        </section>
+
+        <section className="card analytics-empty repo-analytics">
+          <SectionHeader
+            title="Most reviewed repositories"
+            caption="Where your agent spends its time"
+          />
+
+          {loading ? (
+            <p>Loading repositories...</p>
+          ) : analytics?.top_repositories.length ? (
+            <div className="analytics-list">
+              {analytics.top_repositories.map((repo) => (
+                <div className="analytics-row" key={repo.repository}>
+                  <span>{repo.repository}</span>
+                  <strong>{repo.review_count} reviews</strong>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={GitBranch}
+              title="No repository activity"
+              description="Repository statistics will appear here."
+            />
+          )}
+        </section>
+      </div>
+
+      <div className="data-note">
+        <span><i /> LIVE DATA</span>
+        <p>Analytics are calculated from persisted PostgreSQL reviews and findings.</p>
+      </div>
+    </>
+  );
 }
+
 
 export function SettingsPage() {
   const model = process.env.NEXT_PUBLIC_AI_MODEL || "Gemini 3.1 Flash Lite";

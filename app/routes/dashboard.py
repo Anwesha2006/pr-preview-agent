@@ -5,6 +5,7 @@ from sqlalchemy import func
 from fastapi import HTTPException
 from app.database.connection import get_db
 from app.database.models import Review, Finding
+from datetime import datetime, timedelta, timezone
 
 router = APIRouter(
     prefix="/api/dashboard",
@@ -106,41 +107,64 @@ def get_review_details(
         ]
     }
 
-@router.get("/reviews")
-def get_all_reviews(
-    repository: str = None,
-    status: str = None,
+@router.get("/analytics")
+def get_dashboard_analytics(
     db: Session = Depends(get_db)
 ):
-    query = db.query(Review)
+    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
 
-    if repository:
-        query = query.filter(
-            (Review.owner + "/" + Review.repo).ilike(
-                f"%{repository}%"
-            )
+    # Reviews per day
+    daily_reviews = (
+        db.query(
+            func.date(Review.created_at).label("date"),
+            func.count(Review.id).label("count")
         )
+        .filter(Review.created_at >= thirty_days_ago)
+        .group_by(func.date(Review.created_at))
+        .order_by(func.date(Review.created_at))
+        .all()
+    )
 
-    if status:
-        query = query.filter(
-            Review.status.ilike(status)
+    # Findings grouped by severity
+    severity_counts = (
+        db.query(
+            Finding.severity,
+            func.count(Finding.id)
         )
+        .group_by(Finding.severity)
+        .all()
+    )
 
-    reviews = query.order_by(
-        Review.created_at.desc()
-    ).all()
+    # Most reviewed repositories
+    top_repositories = (
+        db.query(
+            Review.owner,
+            Review.repo,
+            func.count(Review.id).label("review_count")
+        )
+        .group_by(Review.owner, Review.repo)
+        .order_by(func.count(Review.id).desc())
+        .limit(5)
+        .all()
+    )
 
-    return [
-        {
-            "id": review.id,
-            "repository": f"{review.owner}/{review.repo}",
-            "pr_number": review.pr_number,
-            "pr_title": review.pr_title,
-            "pr_url": review.pr_url,
-            "findings_count": review.findings_count,
-            "comments_posted": review.comments_posted,
-            "status": review.status,
-            "created_at": review.created_at.isoformat()
-        }
-        for review in reviews
-    ]
+    return {
+        "daily_reviews": [
+            {
+                "date": str(row.date),
+                "count": row.count
+            }
+            for row in daily_reviews
+        ],
+        "severity_breakdown": {
+            severity: count
+            for severity, count in severity_counts
+        },
+        "top_repositories": [
+            {
+                "repository": f"{owner}/{repo}",
+                "review_count": count
+            }
+            for owner, repo, count in top_repositories
+        ]
+    }

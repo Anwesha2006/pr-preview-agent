@@ -78,3 +78,88 @@ export async function getRecentReviews(): Promise<RecentReview[]> {
 
   return response.json();
 }
+
+
+export async function getAllReviews(): Promise<RecentReview[]> {
+  if (!API_URL) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured");
+  }
+
+  const response = await fetch(`${API_URL}/api/dashboard/reviews`, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Review history API returned ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface ReviewFinding {
+  id: number;
+  file_path: string;
+  line_number: number | null;
+  severity: string;
+  issue: string;
+  suggestion: string | null;
+}
+
+export interface ReviewDetails extends RecentReview {
+  head_sha: string | null;
+  summary: string | null;
+  findings: ReviewFinding[];
+}
+
+export async function getReviewDetails(
+  id: string
+): Promise<ReviewDetails> {
+  if (!API_URL) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured");
+  }
+
+  const response = await fetch(
+    `${API_URL}/api/dashboard/reviews/${id}`,
+    { cache: "no-store" }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Review details API returned ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface DashboardAnalytics {
+  daily_reviews: {
+    date: string;
+    count: number;
+  }[];
+
+  severity_breakdown: {
+    high?: number;
+    medium?: number;
+    low?: number;
+  };
+
+  top_repositories: {
+    repository: string;
+    review_count: number;
+  }[];
+}
+
+export async function getDashboardAnalytics(): Promise<DashboardAnalytics> {
+  if (!API_URL) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured");
+  }
+
+  const response = await fetch(`${API_URL}/api/dashboard/analytics`, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Analytics API returned ${response.status}`);
+  }
+
+  return response.json();
+}
