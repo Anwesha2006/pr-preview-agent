@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import {getDashboardStats,getRecentReviews,type DashboardStats,type RecentReview,} from "@/lib/api";
 import Link from "next/link";
 import { Activity, ArrowDownRight, ArrowRight, ArrowUpRight, Bug, Clock3, Code2, GitBranch, GitPullRequest, ShieldCheck, Sparkles, Workflow } from "lucide-react";
 
@@ -13,21 +17,248 @@ function SectionHeader({ title, caption, link }: { title: string; caption?: stri
   return <div className="section-header"><div><h2>{title}</h2>{caption && <p>{caption}</p>}</div>{link}</div>;
 }
 
+
 export function OverviewPage() {
-  const stats = [
-    { title: "PRs reviewed", icon: GitPullRequest, value: "—", note: "No persisted review data", tone: "neutral" },
-    { title: "Bugs detected", icon: Bug, value: "—", note: "No persisted findings", tone: "orange" },
-    { title: "Critical issues", icon: ShieldCheck, value: "—", note: "No persisted findings", tone: "red" },
-    { title: "Successful reviews", icon: Workflow, value: "—", note: "No persisted review data", tone: "green" },
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [reviews, setReviews] = useState<RecentReview[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadDashboard() {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const [statsData, reviewsData] = await Promise.all([
+          getDashboardStats(),
+          getRecentReviews(),
+        ]);
+
+        setStats(statsData);
+        setReviews(reviewsData);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load dashboard data"
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadDashboard();
+  }, []);
+
+  const statCards = [
+    {
+      title: "PRs reviewed",
+      icon: GitPullRequest,
+      value: stats?.total_reviews ?? 0,
+      note: "Total reviews stored",
+      tone: "neutral",
+    },
+    {
+      title: "Bugs detected",
+      icon: Bug,
+      value: stats?.total_findings ?? 0,
+      note: "Total findings detected",
+      tone: "orange",
+    },
+    {
+      title: "High severity",
+      icon: ShieldCheck,
+      value: stats?.high_severity ?? 0,
+      note: "High severity findings",
+      tone: "red",
+    },
+    {
+      title: "Successful reviews",
+      icon: Workflow,
+      value: stats
+        ? reviews.filter((review) => review.status === "completed").length
+        : 0,
+      note: "Among recent 5 reviews",
+      tone: "green",
+    },
   ];
-  return <>
-    <PageHeading eyebrow="YOUR REVIEW WORKSPACE" title="Welcome to Patchwork" description="Here’s what’s happening with your AI code reviewer." action={<Link className="button button-primary" href="/repositories"><GitBranch size={15} /> View repositories <ArrowRight size={14} /></Link>} />
-    <div className="welcome-banner"><div className="welcome-symbol"><Sparkles size={21} /></div><div className="welcome-copy"><div className="welcome-title">Your reviewer is ready when you are <span className="status-pill status-ready"><i /> Workflow configured</span></div><p>New pull requests are reviewed automatically as soon as GitHub sends them over.</p></div><div className="welcome-meta"><span>AI model</span><strong>Gemini 3.1 Flash Lite</strong></div><div className="banner-grid" /></div>
-    <div className="stat-grid">{stats.map(({ title, icon: Icon, value, note, tone }) => <section key={title} className="card stat-card"><div className="stat-head"><span>{title}</span><span className={`stat-icon ${tone}`}><Icon size={16} /></span></div><div className="stat-value">{value}</div><div className="stat-note"><span className="muted-dot" />{note}</div></section>)}</div>
-    <div className="dashboard-grid"><section className="card activity-card"><SectionHeader title="Recent activity" caption="The latest work from your AI reviewer" link={<Link className="subtle-link" href="/reviews">View history <ArrowRight size={13} /></Link>} /><EmptyState icon={GitPullRequest} title="Review activity will show up here" description="When a pull request is reviewed, you’ll find its summary, findings, and status in this feed." action={<Link className="button button-secondary" href="/settings">Check your connection <ArrowRight size={14} /></Link>} /></section><div className="dashboard-side"><section className="card chart-card"><SectionHeader title="Review activity" caption="Reviews over the last 30 days" /><EmptyState icon={Activity} title="Waiting for review data" description="A review history API is needed to chart activity here." /></section><section className="card quick-card"><SectionHeader title="Quick links" caption="Jump back into your workspace" /><Link className="quick-row" href="/repositories"><span className="quick-icon"><GitBranch size={16} /></span><span><strong>Connected repositories</strong><small>Manage repositories under review</small></span><ArrowRight size={15} /></Link><Link className="quick-row" href="/analytics"><span className="quick-icon"><Activity size={16} /></span><span><strong>Review analytics</strong><small>Track quality and review trends</small></span><ArrowRight size={15} /></Link></section></div></div>
-    <div className="data-note"><span><i /> DATA TRANSPARENCY</span><p>Live review metrics will appear once review history is stored by the backend. Nothing on this dashboard is estimated or filled with sample review data.</p></div>
-  </>;
+
+  return (
+    <>
+      <PageHeading
+        eyebrow="YOUR REVIEW WORKSPACE"
+        title="Welcome to Patchwork"
+        description="Here’s what’s happening with your AI code reviewer."
+        action={
+          <Link className="button button-primary" href="/repositories">
+            <GitBranch size={15} />
+            View repositories
+            <ArrowRight size={14} />
+          </Link>
+        }
+      />
+
+      <div className="welcome-banner">
+        <div className="welcome-symbol">
+          <Sparkles size={21} />
+        </div>
+        <div className="welcome-copy">
+          <div className="welcome-title">
+            Your reviewer is ready when you are
+            <span className="status-pill status-ready">
+              <i /> Workflow configured
+            </span>
+          </div>
+          <p>
+            New pull requests are reviewed automatically as soon as GitHub
+            sends them over.
+          </p>
+        </div>
+        <div className="welcome-meta">
+          <span>AI model</span>
+          <strong>Gemini 3.1 Flash Lite</strong>
+        </div>
+        <div className="banner-grid" />
+      </div>
+
+      {error && (
+        <div className="data-note">
+          <span>DATA ERROR</span>
+          <p>{error}</p>
+        </div>
+      )}
+
+      <div className="stat-grid">
+        {statCards.map(({ title, icon: Icon, value, note, tone }) => (
+          <section key={title} className="card stat-card">
+            <div className="stat-head">
+              <span>{title}</span>
+              <span className={`stat-icon ${tone}`}>
+                <Icon size={16} />
+              </span>
+            </div>
+
+            <div className="stat-value">
+              {loading ? "..." : value}
+            </div>
+
+            <div className="stat-note">
+              <span className="muted-dot" />
+              {note}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      <div className="dashboard-grid">
+        <section className="card activity-card">
+          <SectionHeader
+            title="Recent activity"
+            caption="The latest work from your AI reviewer"
+            link={
+              <Link className="subtle-link" href="/reviews">
+                View history <ArrowRight size={13} />
+              </Link>
+            }
+          />
+
+          {loading ? (
+            <EmptyState
+              icon={Activity}
+              title="Loading reviews..."
+              description="Fetching your latest review activity."
+            />
+          ) : reviews.length === 0 ? (
+            <EmptyState
+              icon={GitPullRequest}
+              title="No reviews found"
+              description="Your recent reviews will appear here."
+            />
+          ) : (
+            <div className="recent-review-list">
+              {reviews.map((review) => (
+                <div className="recent-review-row" key={review.id}>
+                  <div className="quick-icon">
+                    <GitPullRequest size={16} />
+                  </div>
+
+                  <div className="recent-review-info">
+                    <strong>
+                      {review.repository} #{review.pr_number}
+                    </strong>
+                    <small>
+                      {review.pr_title || "Pull request review"}
+                    </small>
+                    <small>
+                      {new Date(review.created_at).toLocaleString()}
+                    </small>
+                  </div>
+
+                  <div className="recent-review-meta">
+                    <span>{review.findings_count} findings</span>
+                    <span
+                      className={`status-pill ${
+                        review.status === "completed"
+                          ? "status-ready"
+                          : "status-pending"
+                      }`}
+                    >
+                      {review.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <div className="dashboard-side">
+          <section className="card chart-card">
+            <SectionHeader
+              title="Review activity"
+              caption="Reviews over the last 30 days"
+            />
+            <EmptyState
+              icon={Activity}
+              title="Activity chart coming next"
+              description="We'll connect historical review data to this chart."
+            />
+          </section>
+
+          <section className="card quick-card">
+            <SectionHeader
+              title="Quick links"
+              caption="Jump back into your workspace"
+            />
+            <Link className="quick-row" href="/repositories">
+              <span className="quick-icon">
+                <GitBranch size={16} />
+              </span>
+              <span>
+                <strong>Connected repositories</strong>
+                <small>Manage repositories under review</small>
+              </span>
+              <ArrowRight size={15} />
+            </Link>
+
+            <Link className="quick-row" href="/analytics">
+              <span className="quick-icon">
+                <Activity size={16} />
+              </span>
+              <span>
+                <strong>Review analytics</strong>
+                <small>Track quality and review trends</small>
+              </span>
+              <ArrowRight size={15} />
+            </Link>
+          </section>
+        </div>
+      </div>
+    </>
+  );
 }
+
 
 export function RepositoriesPage() {
   return <><PageHeading eyebrow="WORKSPACE" title="Repositories" description="Manage the GitHub repositories connected to your AI reviewer." action={<span className="count-chip"><GitBranch size={14} /> 0 repositories</span>} /><div className="toolbar"><div className="toolbar-label"><GitBranch size={15} /> Connected repositories</div><span className="toolbar-muted">Repository sync API not configured</span></div><section className="card large-empty"><EmptyState icon={Code2} title="No repository data available yet" description="The GitHub App webhook can receive pull requests, but the backend does not currently expose a repository list endpoint. Add repository API support to see your connected projects here." action={<Link className="button button-secondary" href="/settings">View connection status <ArrowRight size={14} /></Link>} /></section><div className="info-strip"><span className="info-mark">i</span><p>Once repository sync is available, you’ll be able to see default branches, review counts, and the last review date for each project.</p></div></>;
