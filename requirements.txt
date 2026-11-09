@@ -34,3 +34,5 @@ websockets==17.4
 celery==5.7.0
 redis==8.1.0
 pytest==9.2.0
+sqlalchemy
+psycopg[binary]

@@ -13,5 +13,5 @@ GITHUB_PRIVATE_KEY_PATH = os.getenv("GITHUB_PRIVATE_KEY_PATH")
 GITHUB_PRIVATE_KEY = os.getenv("GITHUB_PRIVATE_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-
+DATABASE_URL = os.getenv("DATABASE_URL")
 GEMINI_MODEL = "gemini-3.1-flash-lite"
